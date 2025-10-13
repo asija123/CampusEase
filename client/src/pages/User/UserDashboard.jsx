@@ -44,11 +44,11 @@ const UserDashboardPage = () => {
 		loading,
 		error,
 	} = useSelector((state) => state.user);
-  
+
 	// Profile dropdown state
 	const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 	const profileDropdownRef = useRef(null);
-  const dispatch = useDispatch();
+	const dispatch = useDispatch();
 
 	// Get complaints from Redux store
 	const { complaints, loading: complaintsLoading } = useSelector(
@@ -59,7 +59,9 @@ const UserDashboardPage = () => {
 	useEffect(() => {
 		dispatch(getAllComplaints());
 	}, [dispatch]);
-	const [filteredComplaints, setFilteredComplaints] = useState(complaints);
+	const [filteredComplaints, setFilteredComplaints] = useState(
+		Array.isArray(complaints) ? complaints : [],
+	);
 	const [searchTerm, setSearchTerm] = useState("");
 	const [selectedCategory, setSelectedCategory] = useState("all");
 	const [sortBy, setSortBy] = useState("recent");
@@ -112,21 +114,33 @@ const UserDashboardPage = () => {
 		},
 	};
 
-	// Get user-specific stats
+	// Get user-specific stats (guard against undefined values)
 	const getUserStats = () => {
-		const userComplaints = complaints.filter(
-			(c) => c.createdBy._id === currentUser?._id,
-		);
-		const totalComplaints = complaints.length;
-		const resolvedComplaints = complaints.filter(
-			(c) => c.status.toLowerCase() === "resolved",
+		const allComplaints = Array.isArray(complaints) ? complaints : [];
+		// currentUser may be an object or an id string depending on the store shape
+		const userId = currentUser?._id ?? currentUser ?? null;
+
+		const userComplaints = userId
+			? allComplaints.filter((c) => {
+					const createdById = c?.createdBy?._id ?? c?.createdBy ?? null;
+					return (
+						createdById !== null &&
+						userId !== null &&
+						createdById.toString() === userId.toString()
+					);
+			  })
+			: [];
+
+		const totalComplaints = allComplaints.length;
+		const resolvedComplaints = allComplaints.filter(
+			(c) => (c?.status ?? "").toString().toLowerCase() === "resolved",
 		).length;
 		const myComplaints = userComplaints.length;
 		const myResolvedComplaints = userComplaints.filter(
-			(c) => c.status.toLowerCase() === "resolved",
+			(c) => (c?.status ?? "").toString().toLowerCase() === "resolved",
 		).length;
 		const myPendingComplaints = userComplaints.filter(
-			(c) => c.status.toLowerCase() === "pending",
+			(c) => (c?.status ?? "").toString().toLowerCase() === "pending",
 		).length;
 
 		return {
@@ -159,36 +173,41 @@ const UserDashboardPage = () => {
 
 	// Filter and sort complaints
 	useEffect(() => {
-		let filtered = complaints.filter((complaint) => {
+		const all = Array.isArray(complaints) ? complaints : [];
+		let filtered = all.filter((complaint) => {
 			const matchesSearch =
-				complaint.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-				complaint.description.toLowerCase().includes(searchTerm.toLowerCase());
+				String(complaint?.title ?? "")
+					.toLowerCase()
+					.includes(searchTerm.toLowerCase()) ||
+				String(complaint?.description ?? "")
+					.toLowerCase()
+					.includes(searchTerm.toLowerCase());
 			const matchesCategory =
-				selectedCategory === "all" || complaint.category === selectedCategory;
+				selectedCategory === "all" || complaint?.category === selectedCategory;
 
 			// Filter by my complaints
 			let matchesMyFilter = true;
 			if (myComplaintsFilter === "my-all") {
 				matchesMyFilter =
-					complaint.author ===
+					complaint?.author ===
 					`${currentUser?.firstName} ${currentUser?.lastName}`;
 			} else if (myComplaintsFilter === "my-resolved") {
 				matchesMyFilter =
-					complaint.author ===
+					complaint?.author ===
 						`${currentUser?.firstName} ${currentUser?.lastName}` &&
-					complaint.status === "resolved";
+					complaint?.status === "resolved";
 			} else if (myComplaintsFilter === "my-pending") {
 				matchesMyFilter =
-					complaint.author ===
+					complaint?.author ===
 						`${currentUser?.firstName} ${currentUser?.lastName}` &&
-					(complaint.status === "open" || complaint.status === "in-progress");
+					(complaint?.status === "open" || complaint?.status === "in-progress");
 			}
 
 			return matchesSearch && matchesCategory && matchesMyFilter;
 		});
 
 		// Sort complaints
-		filtered.sort((a, b) => {
+		filtered?.sort((a, b) => {
 			switch (sortBy) {
 				case "upvotes":
 					return b.upvotes - a.upvotes;
@@ -238,7 +257,7 @@ const UserDashboardPage = () => {
 			return;
 		}
 
-		const validFiles = files.filter((file) => {
+		const validFiles = files?.filter((file) => {
 			if (file.size > maxSize) {
 				alert(`File ${file.name} is too large. Maximum size is 5MB`);
 				return false;
@@ -273,7 +292,7 @@ const UserDashboardPage = () => {
 	const removeImage = (imageId) => {
 		setNewComplaint((prev) => ({
 			...prev,
-			images: prev.images.filter((img) => img.id !== imageId),
+			images: prev.images?.filter((img) => img.id !== imageId),
 		}));
 	};
 	const handleSubmitComplaint = async () => {
@@ -559,11 +578,13 @@ const UserDashboardPage = () => {
 										className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/50 backdrop-blur-sm"
 									>
 										<option value="all">All Categories</option>
-										{categories.map((category) => (
-											<option key={category} value={category}>
-												{category}
-											</option>
-										))}
+										{(Array.isArray(categories) ? categories : []).map(
+											(category) => (
+												<option key={category} value={category}>
+													{category}
+												</option>
+											),
+										)}
 									</select>
 								</div>
 
@@ -614,101 +635,103 @@ const UserDashboardPage = () => {
 
 				{/* Complaints Grid */}
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-					{filteredComplaints.map((complaint) => (
-						<div
-							key={complaint._id}
-							className="bg-white/70 backdrop-blur-lg rounded-xl shadow-lg border border-white/20 p-6 hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02]"
-						>
-							{/* Header */}
-							<div className="flex justify-between items-start mb-4">
-								<div className="flex-1">
-									<h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">
-										{complaint.title}
-									</h3>
-									<div
-										className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-											statusConfig[complaint.status.toLowerCase()].color
-										}`}
-									>
-										{getStatusIcon(complaint.status.toLowerCase())}
-										<span className="ml-1">
-											{statusConfig[complaint.status.toLowerCase()].label}
-										</span>
-									</div>
-								</div>
-							</div>
-							{/* Description */}
-							<p className="text-gray-600 text-sm mb-4 line-clamp-3">
-								{complaint.description}
-							</p>
-							{/* Images indicator */}
-							{complaint.images && complaint.images.length > 0 && (
-								<div className="flex items-center mb-4">
-									<ImageIcon className="w-4 h-4 text-gray-500 mr-1" />
-									<span className="text-xs text-gray-500">
-										{complaint.images.length} image
-										{complaint.images.length > 1 ? "s" : ""}
-									</span>
-								</div>
-							)}{" "}
-							{/* Category */}
-							<div className="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium mb-4">
-								{complaint.category}
-							</div>
-							{/* Meta Info */}
-							<div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-								<div className="flex items-center">
-									<User className="w-4 h-4 mr-1" />
-									<span>
-										{complaint.createdBy.firstName}{" "}
-										{complaint.createdBy.lastName}
-									</span>
-								</div>
-								<div className="flex items-center">
-									<Calendar className="w-4 h-4 mr-1" />
-									<span>{formatDate(complaint.createdAt)}</span>
-								</div>
-							</div>
-							{/* Actions */}
-							<div className="flex items-center justify-between pt-4 border-t border-gray-200">
-								<div className="flex items-center space-x-2">
-									<div
-										onClick={() => handleUpvote(complaint._id)}
-										className={`flex items-center px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 ${
-											complaint.upvotes.includes(currentUser?._id)
-												? "bg-blue-100 text-blue-700"
-												: "bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600"
-										}`}
-									>
-										<ThumbsUp
-											className={`w-4 h-4 mr-2 ${
-												complaint.upvotes.includes(currentUser?._id)
-													? "fill-current"
-													: ""
+					{(Array.isArray(filteredComplaints) ? filteredComplaints : []).map(
+						(complaint) => (
+							<div
+								key={complaint._id}
+								className="bg-white/70 backdrop-blur-lg rounded-xl shadow-lg border border-white/20 p-6 hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02]"
+							>
+								{/* Header */}
+								<div className="flex justify-between items-start mb-4">
+									<div className="flex-1">
+										<h3 className="text-lg font-semibold text-gray-900 mb-2 line-clamp-2">
+											{complaint.title}
+										</h3>
+										<div
+											className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+												statusConfig[complaint.status.toLowerCase()].color
 											}`}
-										/>
-										<span className="font-medium">
-											{complaint.upvotes.length}
+										>
+											{getStatusIcon(complaint.status.toLowerCase())}
+											<span className="ml-1">
+												{statusConfig[complaint.status.toLowerCase()].label}
+											</span>
+										</div>
+									</div>
+								</div>
+								{/* Description */}
+								<p className="text-gray-600 text-sm mb-4 line-clamp-3">
+									{complaint.description}
+								</p>
+								{/* Images indicator */}
+								{complaint.images && complaint.images.length > 0 && (
+									<div className="flex items-center mb-4">
+										<ImageIcon className="w-4 h-4 text-gray-500 mr-1" />
+										<span className="text-xs text-gray-500">
+											{complaint.images.length} image
+											{complaint.images.length > 1 ? "s" : ""}
 										</span>
 									</div>
-
-									<div className="flex items-center px-3 py-2 bg-gray-100 text-gray-600 rounded-lg">
-										<MessageSquare className="w-4 h-4 mr-2" />
-										<span>{complaint.comments}</span>
+								)}{" "}
+								{/* Category */}
+								<div className="inline-flex items-center px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium mb-4">
+									{complaint.category}
+								</div>
+								{/* Meta Info */}
+								<div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+									<div className="flex items-center">
+										<User className="w-4 h-4 mr-1" />
+										<span>
+											{complaint.createdBy.firstName}{" "}
+											{complaint.createdBy.lastName}
+										</span>
+									</div>
+									<div className="flex items-center">
+										<Calendar className="w-4 h-4 mr-1" />
+										<span>{formatDate(complaint.createdAt)}</span>
 									</div>
 								</div>
+								{/* Actions */}
+								<div className="flex items-center justify-between pt-4 border-t border-gray-200">
+									<div className="flex items-center space-x-2">
+										<div
+											onClick={() => handleUpvote(complaint._id)}
+											className={`flex items-center px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 ${
+												complaint.upvotes.includes(currentUser?._id)
+													? "bg-blue-100 text-blue-700"
+													: "bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600"
+											}`}
+										>
+											<ThumbsUp
+												className={`w-4 h-4 mr-2 ${
+													complaint.upvotes.includes(currentUser?._id)
+														? "fill-current"
+														: ""
+												}`}
+											/>
+											<span className="font-medium">
+												{complaint.upvotes.length}
+											</span>
+										</div>
 
-								{/* View Button */}
-								<div
-									onClick={() => setSelectedComplaint(complaint)}
-									className="flex items-center px-3 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg cursor-pointer transition-all duration-200"
-								>
-									<Eye className="w-4 h-4 mr-1" />
-									<span className="text-sm font-medium">View</span>
+										<div className="flex items-center px-3 py-2 bg-gray-100 text-gray-600 rounded-lg">
+											<MessageSquare className="w-4 h-4 mr-2" />
+											<span>{complaint.comments}</span>
+										</div>
+									</div>
+
+									{/* View Button */}
+									<div
+										onClick={() => setSelectedComplaint(complaint)}
+										className="flex items-center px-3 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg cursor-pointer transition-all duration-200"
+									>
+										<Eye className="w-4 h-4 mr-1" />
+										<span className="text-sm font-medium">View</span>
+									</div>
 								</div>
 							</div>
-						</div>
-					))}
+						),
+					)}
 				</div>
 
 				{/* Empty State */}
@@ -787,7 +810,10 @@ const UserDashboardPage = () => {
 											Attached Images
 										</label>
 										<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-											{selectedComplaint.images.map((image, index) => (
+											{(Array.isArray(selectedComplaint?.images)
+												? selectedComplaint.images
+												: []
+											).map((image, index) => (
 												<div key={index} className="bg-gray-50 rounded-lg p-2">
 													<img
 														src={image.url}
@@ -815,7 +841,9 @@ const UserDashboardPage = () => {
 									<div className="flex items-center">
 										<User className="w-4 h-4 text-gray-500 mr-2" />
 										<span className="text-gray-900">
-											{selectedComplaint.createdBy?.firstName+" "+selectedComplaint.createdBy?.lastName}
+											{selectedComplaint.createdBy?.firstName +
+												" " +
+												selectedComplaint.createdBy?.lastName}
 										</span>
 									</div>
 									<p className="text-sm text-gray-500 ml-6">
@@ -979,7 +1007,10 @@ const UserDashboardPage = () => {
 								{/* Image Preview */}
 								{newComplaint.images.length > 0 && (
 									<div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-4">
-										{newComplaint.images.map((image) => (
+										{(Array.isArray(newComplaint.images)
+											? newComplaint.images
+											: []
+										).map((image) => (
 											<div
 												key={image.id}
 												className="relative bg-gray-50 rounded-lg p-2"
